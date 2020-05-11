@@ -115,19 +115,43 @@ function _encodeU8intToBase64String(uint8arr: any) : string {
 
 
 /**
- * Reads and encodes file contents into a base64 string
+ * Converts a string to a Uint8Array
  *
  * @private
- * 
- * @param {string} filePath is the path to a file
- * @returns {string} a base64 encoded string
+ *
+ * @param {string} str a string
+ * @returns {Uint8Array} a Uint8Array from the string 
  */
-function _encodeFileToBase64String(filePath: string) : string {
-	const fileContents = Deno.readFileSync(filePath);
-	const base64encodedString = _encodeU8intToBase64String(fileContents);
-	
-	return base64encodedString;
+function _convertStringToUint8(str: string) : Uint8Array {
+	return new Uint8Array(new TextEncoder().encode(str))
 }
+
+
+/**
+ * Decodes a UInt8Array that contains base64 data into a base64 decoded string
+ *
+ * @private
+ *
+ * @param {Uint8Array} bytes a Uint8Array that contains base64 encoded data
+ * @returns {string} an base64 unencoded string 
+ */
+function _decodeBase64Bytes(bytes: Uint8Array) : string {
+	return new TextDecoder().decode(Uint8Array.from(atob(new TextDecoder().decode(bytes)), c => c.charCodeAt(0)))
+}
+
+
+/**
+ * Decodes a Uint8Array that contains base64 data into a base64 decoded Uint8Array
+ *
+ * @private
+ *
+ * @param {Uint8Array} bytes a Uint8Array that contains base64 encoded data
+ * @returns {Uint8Array} an base64 unencoded Uint8Array 
+ */
+function _decodeBase64BytesToUint8(bytes: Uint8Array) : Uint8Array {
+	return Uint8Array.from(atob(new TextDecoder().decode(bytes)), c => c.charCodeAt(0));
+}
+
 
 
 /**
@@ -136,12 +160,14 @@ function _encodeFileToBase64String(filePath: string) : string {
  */
 export class Base64 {
 	
-	private str: string;
+	private bytes: Uint8Array;
 	private mime: string;
+	private isBase64Encoded: boolean;
 	
 	public constructor(data: any) {
-		this.str = data.str;
+		this.bytes = data.bytes;
 		this.mime = data.mime;
+		this.isBase64Encoded = data.isBase64Encoded;
 	}
 	
 	
@@ -156,8 +182,27 @@ export class Base64 {
 	 */
 	public static fromString(unencodedString: string) : Base64 {
 		return new Base64({
-			str: btoa(unencodedString),
+			bytes: _convertStringToUint8(unencodedString),
 			mime: null,
+			isBase64Encoded: false,
+		});
+	}
+	
+	
+	/**
+	 * Creates a Base64 object from an already base64 encoded string
+	 *
+	 * @public
+	 * @static
+	 *
+	 * @param {string} encodedString a string that is already base64 encoded
+	 * @returns {Base64} a Base64 object
+	 */
+	public static fromBase64String(encodedString: string) : Base64 {
+		return new Base64({
+			bytes: _convertStringToUint8(encodedString),
+			mime: null,
+			isBase64Encoded: true,
 		});
 	}
 	
@@ -173,14 +218,33 @@ export class Base64 {
 	 */
 	public static fromUint8Array(uint8arr: Uint8Array) : Base64 {
 		return new Base64({
-			str: _encodeU8intToBase64String(uint8arr),
+			bytes: uint8arr,
 			mime: null,
+			isBase64Encoded: false,
+		});
+	}
+	
+
+	/**
+	 * Creates a Base64 object from a base64 encoded Uint8Array
+	 *
+	 * @public
+	 * @static
+	 *
+	 * @param {Uint8Array} uint8arr a Uint8Array that contains base64 encoded data
+	 * @returns {Base64} a Base64 object
+	 */
+	public static fromBase64Uint8Array(uint8arr: Uint8Array) : Base64 {
+		return new Base64({
+			bytes: uint8arr,
+			mime: null,
+			isBase64Encoded: true,
 		});
 	}
 	
 	
 	/**
-	 * Creates a Base64 object from a Uint8Array
+	 * Creates a Base64 object from the contents of a file
 	 *
 	 * @public
 	 * @static
@@ -190,8 +254,27 @@ export class Base64 {
 	 */
 	public static fromFile(filePath: string) : Base64 {
 		return new Base64({
-			str: _encodeFileToBase64String(filePath),
+			bytes: Deno.readFileSync(filePath),
 			mime: `data:${_determineMimeType(filePath)};base64,`,
+			isBase64Encoded: false,
+		});
+	}
+	
+	
+	/**
+	 * Creates a Base64 object from the contents of an already base64 encoded file
+	 *
+	 * @public
+	 * @static
+	 *
+	 * @param {string} filePath the path to a file that will be base64 decoded
+	 * @returns {Base64} a Base64 object
+	 */
+	public static fromBase64File(filePath: string) : Base64 {
+		return new Base64({
+			bytes: Deno.readFileSync(filePath),
+			mime: null,
+			isBase64Encoded: true,
 		});
 	}
 	
@@ -204,7 +287,11 @@ export class Base64 {
 	 * @returns {Base64} a base64 encoded string
 	 */
 	public toString() : string {
-		return this.str;
+		if (this.isBase64Encoded) {
+			return _decodeBase64Bytes(this.bytes);
+		} else {
+			return _encodeU8intToBase64String(this.bytes);
+		}
 	}
 	
 	
@@ -218,10 +305,19 @@ export class Base64 {
 	 * @returns {string} a base64 encoded string with MIME type included when from a file
 	 */
 	public toStringWithMime() : string {
-		if (!this.mime) {
-			return this.str;
+		if (this.mime) {
+			if (this.isBase64Encoded) {
+				return _decodeBase64Bytes(this.bytes);
+			} else {
+				return this.mime + _encodeU8intToBase64String(this.bytes);
+			}
+			
 		} else {
-			return this.mime + this.str;
+			if (this.isBase64Encoded) {
+				return _decodeBase64Bytes(this.bytes);
+			} else {
+				return _encodeU8intToBase64String(this.bytes);
+			}
 		}
 	}
 	
@@ -234,7 +330,11 @@ export class Base64 {
 	 * @param {string} filePath the path to the file that the Base64 contents will be written to
 	 */
 	public toFile(filePath: string) : void {
-		Deno.writeFileSync(filePath, new TextEncoder().encode(this.str));
+		if (this.isBase64Encoded) {
+			Deno.writeFileSync(filePath, _decodeBase64BytesToUint8(this.bytes))
+		} else {
+			Deno.writeFileSync(filePath, new TextEncoder().encode(_encodeU8intToBase64String(this.bytes)));
+		}
 	}
 	
 	
@@ -247,6 +347,10 @@ export class Base64 {
 	 * @param {string} filePath the path to the file that the Base64 contents will be written to
 	 */
 	public toFileWithMime(filePath: string) : void {
-		Deno.writeFileSync(filePath, new TextEncoder().encode(this.mime + this.str));
+		if (!this.mime) {
+			this.toFile(filePath);
+		} else {
+			Deno.writeFileSync(filePath, new TextEncoder().encode(this.mime + _encodeU8intToBase64String(this.bytes)));
+		}
 	}
 }
